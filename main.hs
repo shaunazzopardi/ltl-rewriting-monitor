@@ -1,4 +1,4 @@
-module LTL(rewrite) where
+module LTL(rewriteWithInput, rewriteWithOutput, propagateNot) where
     
     import Data.List
     import Data.Maybe
@@ -6,65 +6,186 @@ module LTL(rewrite) where
     data LTL 
         = T
         | F
-        | Event Int
+        | In Int
+        | Out Int
         | Or LTL LTL
         | And LTL LTL
         | Not LTL
         | Until LTL LTL
+        | Release LTL LTL
         | Next LTL
         deriving(Eq, Show)
 
-    rewrite :: LTL -> [Int] -> LTL
-    rewrite T is = T
-    rewrite F is = F
-    rewrite (Event i) is = if elem i is
-                            then T
-                            else F
+    rewriteWithInput :: LTL -> [Int] -> LTL
+    rewriteWithInput T is = T
+    rewriteWithInput F is = F
+    rewriteWithInput (In i) is = if elem i is
+                                    then T
+                                    else F
 
-    rewrite (Or pi pi') is 
-        = if rpi == T || rpi' == T
+    rewriteWithInput (Or pi pi') is 
+        = if reduce rpi == T || reduce rpi' == T
             then T
-            else if rpi == F && rpi' == F
+            else if reduce rpi == F && reduce rpi' == F
                 then F
                 else reduce (Or rpi rpi')
         where 
-            rpi = rewrite pi is
-            rpi' = rewrite pi' is
+            rpi = rewriteWithInput pi is
+            rpi' = rewriteWithInput pi' is
 
-    rewrite (And pi pi') is 
-        = if rpi == T && rpi' == T
+    rewriteWithInput (And pi pi') is 
+        = if reduce rpi == T && reduce rpi' == T
             then T
-            else if rpi == F || rpi' == F
+            else if reduce rpi == F || reduce rpi' == F
                 then F
                 else reduce (And rpi rpi')
         where 
-            rpi = rewrite pi is
-            rpi' = rewrite pi' is
+            rpi = rewriteWithInput pi is
+            rpi' = rewriteWithInput pi' is
 
-    rewrite (Not pi) is
-        = if rpi == T
+    rewriteWithInput (Not (Not pi)) is
+        = rewriteWithInput pi is
+
+    rewriteWithInput (Not pi) is
+        = if reduce rpi == T
             then F
-            else if rpi == F
+            else if reduce rpi == F
                     then T
-                    else Not rpi
+                    else Not (reduce rpi)
         where
-            rpi = rewrite pi is
+            rpi = rewriteWithInput pi is
             
-    rewrite (Until pi pi') is 
-        = if rpi == F
-            then rpi'
-            else reduce (Or ((Until pi pi')) (rpi'))
+    rewriteWithInput (Until pi pi') is 
+        = if reduce rpi == F
+            then reduce rpi'
+            else reduce (Or (Until (reduce pi) (reduce pi')) (reduce rpi'))
         where 
-            rpi = rewrite pi is
-            rpi' = rewrite pi' is
+            rpi = rewriteWithInput pi is
+            rpi' = rewriteWithInput pi' is
+            
+    rewriteWithInput (Release pi pi') is 
+        = if reduce rpi' == F
+            then F
+            else if reduce rpi == T
+                    then reduce rpi 
+                    else if pi == rpi && pi' == rpi'
+                            then Release (reduce pi) (reduce pi')
+                            else reduce (reduce $ Or ((Release (reduce pi) (reduce pi'))) (reduce $ And (reduce rpi) (reduce rpi')))
+        where 
+            rpi = rewriteWithInput pi is
+            rpi' = rewriteWithInput pi' is
+
+    rewriteWithInput (Next pi) is
+        = reduce pi
+
+    rewriteWithOutput :: LTL -> [Int] -> (LTL, [[Int]])
+    rewriteWithOutput T is = (T, [[]])
+    rewriteWithOutput F is = (F, [])
+    rewriteWithOutput (In i) is = if elem i is
+                                    then (T, [[]])
+                                    else (F, [])
+
+    rewriteWithOutput (Out i) is = (T, [[i]])
+
+    rewriteWithOutput (Or pi pi') is 
+        = if reduce rpi == T
+            then (T, out)
+            else if reduce rpi == T
+                then (T, out')
+                else if reduce rpi == F && reduce rpi' == F
+                        then (F, [])
+                        else (reduce (Or (reduce rpi) (reduce rpi')), out ++ out')
+        where 
+            (rpi, out) = rewriteWithOutput pi is
+            (rpi', out') = rewriteWithOutput pi' is
+
+    rewriteWithOutput (And pi pi') is 
+        = if reduce rpi == T && reduce rpi' == T
+            then (T, out ++ out')
+            else if reduce rpi == F 
+                    then (F, out)
+                    else if reduce rpi' == F
+                            then (F, out')
+                            else (reduce (And (reduce rpi) (reduce rpi')), out ++ out')
+        where 
+            (rpi, out) = rewriteWithOutput pi is
+            (rpi', out') = rewriteWithOutput pi' is
+
+    rewriteWithOutput (Not (Not pi)) is
+        = rewriteWithOutput pi is
+
+    -- When we have Or (Not $ Out 1) (Out 2) [note how this is the definition of implication]
+    -- then the program will do 2, but not doing anything is also an option
+    -- note how not doing Out 1 satisfies the first conjunct, which is not captured here
+    rewriteWithOutput (Not pi) is
+        = if (Not pi) == propagated
+            then if reduce rpi == T
+                    then (F, [])
+                    else if reduce rpi == F
+                            then (T, out)
+                            else (reduce $ Not (reduce rpi), out)
+            else rewriteWithOutput propagated is
+        where
+            propagated = propagateNot (Not pi)
+            (rpi, out) = rewriteWithOutput pi is
+            
+    rewriteWithOutput (Until pi pi') is 
+        = if reduce rpi == F
+            then (reduce rpi', out')
+            else if reduce rpi == T && reduce rpi' == T
+                    then (reduce rpi', [is ++ is' | is <- out, is' <- out'])
+                    else (reduce (Or ((Until (reduce pi) (reduce pi'))) (rpi')), out ++ out')
+        where 
+            (rpi, out) = rewriteWithOutput pi is
+            (rpi', out') = rewriteWithOutput pi' is
+
+    -- not working for  (Release (Not T) (Next (Out 2)))
+    rewriteWithOutput (Release pi pi') is 
+        = if reduce rpi' == F
+            then (F, [])
+            else if reduce rpi == T
+                    then (reduce rpi', [is ++ is' | is <- out, is' <- out']) 
+                    else if pi == rpi && pi' == rpi'
+                            then (Release pi pi', [is ++ is' | is <- out, is' <- out'])
+                            else if isOr final
+                                    then (final, out ++ out')
+                                    else (final, out') 
+        where 
+            (rpi, out) = rewriteWithOutput pi is
+            (rpi', out') = rewriteWithOutput pi' is
+            final = reduce (Or ((Release pi pi')) ( And ( rpi) ( rpi')))
+
+    rewriteWithOutput (Next pi) is
+        = (reduce pi, [])
+    
+    isOr :: LTL -> Bool
+    isOr (Or _ _) = True
+    isOr _ = False
+
+    propagateNot :: LTL -> LTL
+    propagateNot (Not (Next pi)) = Next (Not (propagateNot pi))
+    propagateNot (Not (Release pi pi')) = Until (Not (propagateNot pi)) (Not (propagateNot pi'))
+    propagateNot (Not (Until pi pi')) = Release (Not (propagateNot pi)) (Not (propagateNot pi'))
+    propagateNot pi = pi
+
+    -- For an appropriate winning strategy I think we need the not operator to be
+    -- directly attached to an output atom.
+    -- not X o = X not o
+    -- not(o U p) = (not o R not p)
 
     reduce :: LTL -> LTL
-    reduce(And T pi) = pi
-    reduce(And pi T) = pi
+    reduce(Not(Not pi)) = reduce pi
+    reduce(Not pi) = Not $ reduce pi
+    reduce(And T pi) = reduce pi
+    reduce(And pi T) = reduce pi
     reduce(And _ F) = F
     reduce(And F _) = F
+    reduce(And pi pi') = reduce (And (reduce pi) (reduce pi'))
     reduce(Or _ T) = T
     reduce(Or T _) = T
-    reduce(Or pi F) = pi
-    reduce(Or F pi) = pi
+    reduce(Or pi F) = reduce pi
+    reduce(Or F pi) = reduce pi
+    reduce(Or pi pi') = reduce (Or (reduce pi) (reduce pi'))
+    reduce(Until pi pi') = Until (reduce pi) (reduce pi')
+    reduce(Release pi pi') = Release (reduce pi) (reduce pi')
     reduce(pi) = pi
