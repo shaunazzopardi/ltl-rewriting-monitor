@@ -16,68 +16,6 @@ module LTL(rewriteWithInput, rewriteWithOutput, propagateNot) where
         | Next LTL
         deriving(Eq, Show)
 
-    rewriteWithInput :: LTL -> [Int] -> LTL
-    rewriteWithInput T is = T
-    rewriteWithInput F is = F
-    rewriteWithInput (In i) is = if elem i is
-                                    then T
-                                    else F
-
-    rewriteWithInput (Or pi pi') is 
-        = if reduce rpi == T || reduce rpi' == T
-            then T
-            else if reduce rpi == F && reduce rpi' == F
-                then F
-                else reduce (Or rpi rpi')
-        where 
-            rpi = rewriteWithInput pi is
-            rpi' = rewriteWithInput pi' is
-
-    rewriteWithInput (And pi pi') is 
-        = if reduce rpi == T && reduce rpi' == T
-            then T
-            else if reduce rpi == F || reduce rpi' == F
-                then F
-                else reduce (And rpi rpi')
-        where 
-            rpi = rewriteWithInput pi is
-            rpi' = rewriteWithInput pi' is
-
-    rewriteWithInput (Not (Not pi)) is
-        = rewriteWithInput pi is
-
-    rewriteWithInput (Not pi) is
-        = if reduce rpi == T
-            then F
-            else if reduce rpi == F
-                    then T
-                    else Not (reduce rpi)
-        where
-            rpi = rewriteWithInput pi is
-            
-    rewriteWithInput (Until pi pi') is 
-        = if reduce rpi == F
-            then reduce rpi'
-            else reduce (Or (Until (reduce pi) (reduce pi')) (reduce rpi'))
-        where 
-            rpi = rewriteWithInput pi is
-            rpi' = rewriteWithInput pi' is
-            
-    rewriteWithInput (Release pi pi') is 
-        = if reduce rpi' == F
-            then F
-            else if reduce rpi == T
-                    then reduce rpi 
-                    else if pi == rpi && pi' == rpi'
-                            then Release (reduce pi) (reduce pi')
-                            else reduce (reduce $ Or ((Release (reduce pi) (reduce pi'))) (reduce $ And (reduce rpi) (reduce rpi')))
-        where 
-            rpi = rewriteWithInput pi is
-            rpi' = rewriteWithInput pi' is
-
-    rewriteWithInput (Next pi) is
-        = reduce pi
-
     rewriteWithOutput :: LTL -> [Int] -> (LTL, [[Int]])
     rewriteWithOutput T is = (T, [[]])
     rewriteWithOutput F is = (F, [])
