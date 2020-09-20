@@ -1,4 +1,4 @@
-module LTL(rewriteWithInput, rewriteWithOutput, propagateNot) where
+module LTL(rewriteWithOutput, propagateNot) where
     
     import Data.List
     import Data.Maybe
@@ -105,7 +105,7 @@ module LTL(rewriteWithInput, rewriteWithOutput, propagateNot) where
     propagateNot :: LTL -> LTL
     propagateNot (Not (Next pi)) = Next (Not (propagateNot pi))
     propagateNot (Not (Release pi pi')) = Until (Not (propagateNot pi)) (Not (propagateNot pi'))
-    propagateNot (Not (Until pi pi')) = Release (Not (propagateNot pi)) (Not (propagateNot pi'))
+    propagateNot (Not (Until pi pi')) = Release ((propagateNot (Not pi))) (propagateNot (Not pi'))
     propagateNot pi = pi
 
     -- For an appropriate winning strategy I think we need the not operator to be
