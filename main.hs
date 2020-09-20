@@ -111,6 +111,8 @@ module LTL(rewriteWithInput, rewriteWithOutput, propagateNot) where
             (rpi, out) = rewriteWithOutput pi is
             (rpi', out') = rewriteWithOutput pi' is
 
+    rewriteWithOutput (Not (Out i)) is = (T, [[]])
+
     rewriteWithOutput (Not (Not pi)) is
         = rewriteWithOutput pi is
 
