@@ -66,7 +66,7 @@ module LTL(rewriteWithOutput, propagateNot) where
                             else (reduce $ Not (reduce rpi), out)
             else rewriteWithOutput propagated is
         where
-            propagated = propagateNot (Not pi)
+            propagated = reduce $ propagateNot (Not pi)
             (rpi, out) = rewriteWithOutput pi is
             
     rewriteWithOutput (Until pi pi') is 
